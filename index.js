@@ -3,6 +3,7 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const { saveMessage } = require('./db');
+const config = require('./config.json');
 
 const client = new Client({
   authStrategy: new LocalAuth(),
@@ -23,6 +24,7 @@ client.on('message', async (msg) => {
 
   try {
     const chat = await msg.getChat();
+    if (config.ignoredGroups.some(name => name.toLowerCase() === chat.name.toLowerCase())) return;
     const contact = await msg.getContact();
     saveMessage(msg, chat, contact);
     console.log(`[${new Date(msg.timestamp * 1000).toISOString()}] ${chat.name} — ${contact.pushname || msg.author || 'unknown'}: ${msg.body || `<${msg.type}>`}`);

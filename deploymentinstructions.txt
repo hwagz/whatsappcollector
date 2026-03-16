@@ -178,7 +178,30 @@ Back this up too if you want to avoid re-scanning the QR code after
 a server migration.
 
 
-9. UPDATING THE SERVICE
+9. IGNORING GROUPS
+-------------------
+
+To prevent certain groups from being collected, edit config.json:
+
+    nano /opt/whatsappcollector/config.json
+
+Add group names exactly as they appear in WhatsApp (matching is case-insensitive):
+
+    {
+      "ignoredGroups": [
+        "Family Chat",
+        "Work Announcements"
+      ]
+    }
+
+Restart the service to apply changes:
+
+    sudo systemctl restart whatsappcollector
+
+Group names are visible in the service logs (journalctl) as messages arrive.
+
+
+10. UPDATING THE SERVICE
 ------------------------
 
     cd /opt/whatsappcollector
