@@ -17,6 +17,7 @@ db.exec(`
     type        TEXT    NOT NULL,
     timestamp   INTEGER NOT NULL,
     has_media   INTEGER NOT NULL DEFAULT 0,
+    media_path  TEXT,
     recap       INTEGER NOT NULL DEFAULT 0
   );
 
@@ -24,20 +25,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 `);
 
-// Migration: add recap column if it doesn't exist (for databases created before this column was added)
+// Migrations for columns added after initial schema
 const columns = db.prepare('PRAGMA table_info(messages)').all();
 if (!columns.some(col => col.name === 'recap')) {
   db.exec('ALTER TABLE messages ADD COLUMN recap INTEGER NOT NULL DEFAULT 0');
 }
+if (!columns.some(col => col.name === 'media_path')) {
+  db.exec('ALTER TABLE messages ADD COLUMN media_path TEXT');
+}
 
 const insertMessage = db.prepare(`
   INSERT OR IGNORE INTO messages
-    (wid, group_id, group_name, sender_id, sender_name, body, type, timestamp, has_media)
+    (wid, group_id, group_name, sender_id, sender_name, body, type, timestamp, has_media, media_path)
   VALUES
-    (@wid, @group_id, @group_name, @sender_id, @sender_name, @body, @type, @timestamp, @has_media)
+    (@wid, @group_id, @group_name, @sender_id, @sender_name, @body, @type, @timestamp, @has_media, @media_path)
 `);
 
-function saveMessage(msg, chat, contact) {
+function saveMessage(msg, chat, contact, mediaPath) {
   insertMessage.run({
     wid:         msg.id._serialized,
     group_id:    msg.from,
@@ -48,6 +52,7 @@ function saveMessage(msg, chat, contact) {
     type:        msg.type,
     timestamp:   msg.timestamp,
     has_media:   msg.hasMedia ? 1 : 0,
+    media_path:  mediaPath || null,
   });
 }
 

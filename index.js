@@ -1,9 +1,34 @@
 'use strict';
 
+const fs = require('fs');
+const path = require('path');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const { saveMessage } = require('./db');
 const config = require('./config.json');
+
+function extFromMimetype(mimetype) {
+  // mimetype may look like "image/jpeg" or "audio/ogg; codecs=opus"
+  const base = mimetype.split(';')[0].trim().split('/')[1] || 'bin';
+  const map = { jpeg: 'jpg', 'svg+xml': 'svg', quicktime: 'mov' };
+  return map[base] || base;
+}
+
+async function downloadAndSaveMedia(msg) {
+  const media = await msg.downloadMedia();
+  if (!media) return null;
+
+  const sanitize = (s) => s.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const dir = path.join(config.mediaPath, sanitize(msg.from));
+  fs.mkdirSync(dir, { recursive: true });
+
+  const ext = extFromMimetype(media.mimetype);
+  const filename = `${sanitize(msg.id._serialized)}.${ext}`;
+  const filePath = path.join(dir, filename);
+
+  fs.writeFileSync(filePath, Buffer.from(media.data, 'base64'));
+  return filePath;
+}
 
 const client = new Client({
   authStrategy: new LocalAuth(),
@@ -26,7 +51,15 @@ client.on('message', async (msg) => {
     const chat = await msg.getChat();
     if (config.ignoredGroups.some(name => name.toLowerCase() === chat.name.toLowerCase())) return;
     const contact = await msg.getContact();
-    saveMessage(msg, chat, contact);
+    let mediaPath = null;
+    if (config.downloadMedia && msg.hasMedia) {
+      try {
+        mediaPath = await downloadAndSaveMedia(msg);
+      } catch (err) {
+        console.error('Failed to download media:', err);
+      }
+    }
+    saveMessage(msg, chat, contact, mediaPath);
     console.log(`[${new Date(msg.timestamp * 1000).toISOString()}] ${chat.name} — ${contact.pushname || msg.author || 'unknown'}: ${msg.body || `<${msg.type}>`}`);
   } catch (err) {
     console.error('Failed to save message:', err);

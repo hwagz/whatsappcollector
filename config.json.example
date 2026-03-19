@@ -4,7 +4,7 @@
   "smtp": {
     "host": "smtp.gmail.com",
     "port": 465,
-    "user": "silverarrowweb@gmail.com",
+    "user": "you@gmail.com",
     "password": ""
   },
   "aiApiKey": "",

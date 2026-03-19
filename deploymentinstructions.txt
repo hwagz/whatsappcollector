@@ -44,7 +44,11 @@ Option B — copy files manually:
     scp -r /path/to/whatsappcollector user@yourserver:/opt/whatsappcollector
 
 Do not copy node_modules/, .wwebjs_auth/, or messages.db.
-The .gitignore already excludes these.
+The .gitignore already excludes these (including config.json itself).
+
+After cloning/copying, create your config from the example:
+
+    cp /opt/whatsappcollector/config.json.example /opt/whatsappcollector/config.json
 
 
 3. INSTALL DEPENDENCIES
@@ -74,8 +78,12 @@ Edit the Client constructor in index.js:
       puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox'] },
     });
 
-This is safe to apply proactively — do it before the first run to
-avoid troubleshooting later.
+SECURITY NOTE: --no-sandbox disables Chromium's process isolation. This
+means that if a malicious WhatsApp message were able to exploit a browser
+bug, it would have direct access to the server process. Mitigate this by:
+  - Running the service as a dedicated low-privilege user (not root)
+  - Using the systemd hardening directives in step 6
+  - Keeping Node.js and npm dependencies up to date
 
 
 5. FIRST RUN: SCAN THE QR CODE
@@ -101,11 +109,21 @@ unless the session expires or .wwebjs_auth/ is deleted.
 6. RUN AS A SYSTEMD SERVICE
 ----------------------------
 
+Create a dedicated non-root user to run the service (do not use root):
+
+    sudo useradd --system --no-create-home --shell /usr/sbin/nologin whatsappcollector
+    sudo chown -R whatsappcollector:whatsappcollector /opt/whatsappcollector
+
+Lock down sensitive files so only that user can read them:
+
+    sudo chmod 600 /opt/whatsappcollector/config.json
+    sudo chmod 700 /opt/whatsappcollector/.wwebjs_auth
+
 Create the service file:
 
     sudo nano /etc/systemd/system/whatsappcollector.service
 
-Paste the following (replace YOUR_USER and the path if different):
+Paste the following:
 
     [Unit]
     Description=WhatsApp Group Message Collector
@@ -113,13 +131,19 @@ Paste the following (replace YOUR_USER and the path if different):
 
     [Service]
     Type=simple
-    User=YOUR_USER
+    User=whatsappcollector
     WorkingDirectory=/opt/whatsappcollector
     ExecStart=/usr/bin/node index.js
     Restart=on-failure
     RestartSec=10
     StandardOutput=journal
     StandardError=journal
+
+    ; Hardening
+    NoNewPrivileges=true
+    PrivateTmp=true
+    ProtectSystem=strict
+    ReadWritePaths=/opt/whatsappcollector
 
     [Install]
     WantedBy=multi-user.target
@@ -201,7 +225,69 @@ Restart the service to apply changes:
 Group names are visible in the service logs (journalctl) as messages arrive.
 
 
-10. UPDATING THE SERVICE
+10. RECAP EMAIL SETUP
+---------------------
+
+The recap script (recap.js) emails a summary of unread group messages.
+It is run manually or via cron — it is not part of the main service.
+
+Step 1: Generate a Gmail App Password
+
+  Gmail requires an App Password (not your account password) for SMTP access.
+  Your Google account must have 2-Step Verification enabled.
+
+  1. Go to: myaccount.google.com
+  2. Security → 2-Step Verification → App passwords
+  3. Select "Mail" and your device, then click Generate
+  4. Copy the 16-character password shown
+
+Step 2: Fill in config.json
+
+    nano /opt/whatsappcollector/config.json
+
+Set the smtp password and add at least one recipient:
+
+    {
+      "ignoredGroups": [],
+      "recipientEmails": ["recipient@example.com"],
+      "smtp": {
+        "host": "smtp.gmail.com",
+        "port": 465,
+        "user": "silverarrowweb@gmail.com",
+        "password": "xxxx xxxx xxxx xxxx"
+      },
+      "aiApiKey": ""
+    }
+
+Step 3: Test manually
+
+    cd /opt/whatsappcollector
+    node recap.js
+
+If there are unrecapped messages in the database, an email will be sent.
+If the database is empty, the script exits silently (no email).
+
+Step 4: Set up a cron job
+
+    crontab -e
+
+Add a line for your desired schedule. Examples:
+
+    # Daily at 8:00 AM
+    0 8 * * * cd /opt/whatsappcollector && /usr/bin/node recap.js >> /var/log/whatsappcollector-recap.log 2>&1
+
+    # Twice daily at 8 AM and 6 PM
+    0 8,18 * * * cd /opt/whatsappcollector && /usr/bin/node recap.js >> /var/log/whatsappcollector-recap.log 2>&1
+
+    # Every Monday at 9 AM
+    0 9 * * 1 cd /opt/whatsappcollector && /usr/bin/node recap.js >> /var/log/whatsappcollector-recap.log 2>&1
+
+To view the recap log:
+
+    tail -f /var/log/whatsappcollector-recap.log
+
+
+11. UPDATING THE SERVICE
 ------------------------
 
     cd /opt/whatsappcollector
