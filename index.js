@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
-const { saveMessage } = require('./db');
+const { initDb, saveMessage } = require('./db');
 const config = require('./config.json');
 
 function extFromMimetype(mimetype) {
@@ -74,4 +74,9 @@ client.on('disconnected', (reason) => {
   console.warn('Client disconnected:', reason);
 });
 
-client.initialize();
+initDb()
+  .then(() => client.initialize())
+  .catch(err => {
+    console.error('Failed to initialize database:', err);
+    process.exit(1);
+  });

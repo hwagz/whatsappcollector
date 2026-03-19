@@ -1,6 +1,7 @@
 'use strict';
 
-const Database = require('better-sqlite3');
+const fs = require('fs');
+const initSqlJs = require('sql.js');
 const nodemailer = require('nodemailer');
 const config = require('./config.json');
 
@@ -27,34 +28,14 @@ async function generateAiSummary(groupName, messages) {
 }
 
 // ---------------------------------------------------------------------------
-// DB
+// Helpers
 // ---------------------------------------------------------------------------
-const db = new Database('messages.db');
-
-const unrecapped = db.prepare(`
-  SELECT id, group_name, sender_name, sender_id, body, type, timestamp, has_media
-  FROM messages
-  WHERE recap = 0
-  ORDER BY group_name, timestamp
-`).all();
-
-if (unrecapped.length === 0) {
-  process.exit(0);
+function toObjects(result) {
+  if (!result.length) return [];
+  const { columns, values } = result[0];
+  return values.map(row => Object.fromEntries(columns.map((col, i) => [col, row[i]])));
 }
 
-// ---------------------------------------------------------------------------
-// Group rows by group_name
-// ---------------------------------------------------------------------------
-const groups = {};
-for (const row of unrecapped) {
-  const name = row.group_name || '(unknown group)';
-  if (!groups[name]) groups[name] = [];
-  groups[name].push(row);
-}
-
-// ---------------------------------------------------------------------------
-// Build HTML email
-// ---------------------------------------------------------------------------
 function formatTime(timestamp) {
   return new Date(timestamp * 1000).toLocaleString('en-US', {
     month: 'short', day: 'numeric',
@@ -95,7 +76,7 @@ function buildGroupTable(rows) {
     </table>`;
 }
 
-async function buildEmailHtml() {
+async function buildEmailHtml(unrecapped, groups) {
   const date = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
   const h2Style = 'margin:24px 0 8px;font-size:16px;color:#111827;border-bottom:2px solid #e5e7eb;padding-bottom:4px;';
   const summaryStyle = 'background:#f0fdf4;border-left:4px solid #22c55e;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#166534;';
@@ -123,15 +104,34 @@ async function buildEmailHtml() {
 }
 
 // ---------------------------------------------------------------------------
-// Send email + mark recap=1
+// Main: load DB, send email, mark recap=1
 // ---------------------------------------------------------------------------
-const markRecapped = db.prepare('UPDATE messages SET recap = 1 WHERE id = @id');
-const markAllRecapped = db.transaction((rows) => {
-  for (const row of rows) markRecapped.run({ id: row.id });
-});
-
 (async () => {
-  const html = await buildEmailHtml();
+  const DB_PATH = 'messages.db';
+  if (!fs.existsSync(DB_PATH)) process.exit(0);
+
+  const SQL = await initSqlJs({
+    locateFile: file => `${__dirname}/node_modules/sql.js/dist/${file}`,
+  });
+  const db = new SQL.Database(fs.readFileSync(DB_PATH));
+
+  const unrecapped = toObjects(db.exec(`
+    SELECT id, group_name, sender_name, sender_id, body, type, timestamp, has_media
+    FROM messages
+    WHERE recap = 0
+    ORDER BY group_name, timestamp
+  `));
+
+  if (unrecapped.length === 0) process.exit(0);
+
+  const groups = {};
+  for (const row of unrecapped) {
+    const name = row.group_name || '(unknown group)';
+    if (!groups[name]) groups[name] = [];
+    groups[name].push(row);
+  }
+
+  const html = await buildEmailHtml(unrecapped, groups);
 
   const transporter = nodemailer.createTransport({
     host: config.smtp.host,
@@ -152,7 +152,13 @@ const markAllRecapped = db.transaction((rows) => {
     html,
   });
 
-  markAllRecapped(unrecapped);
+  db.run('BEGIN');
+  for (const row of unrecapped) {
+    db.run('UPDATE messages SET recap = 1 WHERE id = ?', [row.id]);
+  }
+  db.run('COMMIT');
+  fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
+
   console.log(`Recap sent: ${unrecapped.length} messages across ${Object.keys(groups).length} groups.`);
 })().catch(err => {
   console.error('Recap failed:', err.message);

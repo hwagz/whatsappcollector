@@ -55,12 +55,17 @@ After cloning/copying, create your config from the example:
 -----------------------
 
     cd /opt/whatsappcollector
-    npm install
+    npm install --build-from-source=better-sqlite3
 
-This will also download Chromium (~150MB). Allow a few minutes.
+The --build-from-source flag is required on most Linux servers. The
+prebuilt better-sqlite3 binary requires a newer glibc than many distros
+ship (Ubuntu 20.04, Debian 11, etc.), so compiling from source avoids
+a glibc version mismatch error. This also downloads Chromium (~150MB).
+Allow a few minutes.
 
-If npm install fails with a node-gyp error for better-sqlite3, ensure
-the build tools from step 1 are installed and retry.
+If the build still fails, verify the build tools from step 1 are installed:
+
+    python3 --version && make --version && g++ --version
 
 
 4. CHROMIUM SANDBOX (important for most VPS providers)
