@@ -63,6 +63,11 @@ ship (Ubuntu 20.04, Debian 11, etc.), so compiling from source avoids
 a glibc version mismatch error. This also downloads Chromium (~150MB).
 Allow a few minutes.
 
+After installing, download the Puppeteer-managed Chrome browser as the
+service user (it stores it in that user's home directory cache):
+
+    cd /opt/whatsappcollector && sudo -u whatsappcollector npx puppeteer browsers install chrome
+
 If the build still fails, verify the build tools from step 1 are installed:
 
     python3 --version && make --version && g++ --version
@@ -114,6 +119,10 @@ unless the session expires or .wwebjs_auth/ is deleted.
 6. RUN AS A SYSTEMD SERVICE
 ----------------------------
 
+WARNING: WhatsApp has a limit of devices you can be logged in to
+
+sudo -u whatsappcollector node index.js
+
 Create a dedicated non-root user to run the service (do not use root):
 
     sudo useradd --system --no-create-home --shell /usr/sbin/nologin whatsappcollector
@@ -158,6 +167,7 @@ Enable and start the service:
     sudo systemctl daemon-reload
     sudo systemctl enable whatsappcollector
     sudo systemctl start whatsappcollector
+    sudo systemctl restart whatsappcollector
 
 
 7. MANAGING THE SERVICE
@@ -268,6 +278,9 @@ Step 3: Test manually
 
     cd /opt/whatsappcollector
     node recap.js
+    manual run:
+    node /opt/whatsappcollector/recap.js
+
 
 If there are unrecapped messages in the database, an email will be sent.
 If the database is empty, the script exits silently (no email).
@@ -299,3 +312,80 @@ To view the recap log:
     git pull
     npm install
     sudo systemctl restart whatsappcollector
+
+
+12. RUNNING MULTIPLE INSTANCES
+-------------------------------
+
+You can run a second (or third) instance on the same server to collect
+messages from a different WhatsApp account. No code changes are needed —
+each instance is fully isolated by its directory.
+
+What is automatically separate per instance:
+  - .wwebjs_auth/   (WhatsApp session for that account)
+  - messages.db     (separate database)
+  - config.json     (separate group filters, email settings, etc.)
+
+Steps for each additional instance (example: instance 2):
+
+1. Clone or copy the project to a new directory:
+
+       git clone <your-repo-url> /opt/whatsappcollector2
+       cd /opt/whatsappcollector2
+       cp config.json.example config.json
+       npm install
+
+2. Create a new dedicated system user:
+
+       sudo useradd --system --create-home --shell /usr/sbin/nologin whatsappcollector2
+       sudo chown -R whatsappcollector2:whatsappcollector2 /opt/whatsappcollector2
+
+3. Install Chrome for that user:
+
+       cd /opt/whatsappcollector2 && sudo -u whatsappcollector2 npx puppeteer browsers install chrome
+
+4. Lock down sensitive files:
+
+       sudo chmod 600 /opt/whatsappcollector2/config.json
+
+5. Create a new systemd service file:
+
+       sudo nano /etc/systemd/system/whatsappcollector2.service
+
+   Paste (same as section 6 but with updated paths and user):
+
+       [Unit]
+       Description=WhatsApp Group Message Collector 2
+       After=network.target
+
+       [Service]
+       Type=simple
+       User=whatsappcollector2
+       WorkingDirectory=/opt/whatsappcollector2
+       ExecStart=/usr/bin/node index.js
+       Restart=on-failure
+       RestartSec=10
+       StandardOutput=journal
+       StandardError=journal
+
+       ; Hardening
+       NoNewPrivileges=true
+       PrivateTmp=true
+       ProtectSystem=strict
+       ReadWritePaths=/opt/whatsappcollector2
+
+       [Install]
+       WantedBy=multi-user.target
+
+6. Scan the QR code for the second WhatsApp account (interactive first run):
+
+       cd /opt/whatsappcollector2 && sudo -u whatsappcollector2 node index.js
+
+7. Enable and start the service:
+
+       sudo systemctl daemon-reload
+       sudo systemctl enable whatsappcollector2
+       sudo systemctl start whatsappcollector2
+
+MEMORY NOTE: Each instance runs its own Chrome process (~300-400MB RAM).
+Plan accordingly if running several instances on a small VPS.

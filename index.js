@@ -43,13 +43,20 @@ client.on('ready', () => {
   console.log('WhatsApp client ready. Listening for group messages...');
 });
 
+function isGroupAllowed(chatName) {
+  if (config.useAllowedGroups) {
+    return config.allowedGroups.some(n => n.toLowerCase() === chatName.toLowerCase());
+  }
+  return !config.ignoredGroups.some(n => n.toLowerCase() === chatName.toLowerCase());
+}
+
 client.on('message', async (msg) => {
   if (msg.fromMe) return;
   if (!msg.from.endsWith('@g.us')) return;
 
   try {
     const chat = await msg.getChat();
-    if (config.ignoredGroups.some(name => name.toLowerCase() === chat.name.toLowerCase())) return;
+    if (!isGroupAllowed(chat.name)) return;
     const contact = await msg.getContact();
     let mediaPath = null;
     if (config.downloadMedia && msg.hasMedia) {
@@ -77,6 +84,6 @@ client.on('disconnected', (reason) => {
 initDb()
   .then(() => client.initialize())
   .catch(err => {
-    console.error('Failed to initialize database:', err);
+    console.error('Startup failed:', err);
     process.exit(1);
   });

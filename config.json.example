@@ -1,5 +1,7 @@
 {
   "ignoredGroups": [],
+  "useAllowedGroups": false,
+  "allowedGroups": [],
   "recipientEmails": [],
   "smtp": {
     "host": "smtp.gmail.com",
