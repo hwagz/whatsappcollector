@@ -32,7 +32,13 @@ async function downloadAndSaveMedia(msg) {
 
 const client = new Client({
   authStrategy: new LocalAuth(),
-  puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox'] },
+  puppeteer: {
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+    ],
+  },
 });
 
 client.on('qr', (qr) => {
