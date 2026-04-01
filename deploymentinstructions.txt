@@ -128,14 +128,22 @@ Create a dedicated non-root user to run the service (do not use root):
     sudo useradd --system --no-create-home --shell /usr/sbin/nologin whatsappcollector
     sudo chown -R whatsappcollector:whatsappcollector /opt/whatsappcollector
 
+    sudo useradd --system --no-create-home --shell /usr/sbin/nologin piedrascollector
+    sudo chown -R piedrascollector:piedrascollector /opt/piedrascollector
+
 Lock down sensitive files so only that user can read them:
 
     sudo chmod 600 /opt/whatsappcollector/config.json
     sudo chmod 700 /opt/whatsappcollector/.wwebjs_auth
 
+    sudo chmod 600 /opt/piedrascollector/config.json
+    sudo chmod 700 /opt/piedrascollector/.wwebjs_auth
+
 Create the service file:
 
-    sudo nano /etc/systemd/system/whatsappcollector.service
+    sudo vi /etc/systemd/system/whatsappcollector.service
+
+    sudo vi /etc/systemd/system/piedrascollector.service
 
 Paste the following:
 
@@ -158,6 +166,31 @@ Paste the following:
     PrivateTmp=true
     ProtectSystem=strict
     ReadWritePaths=/opt/whatsappcollector
+
+    [Install]
+    WantedBy=multi-user.target
+
+    FART
+
+    [Unit]
+    Description=WhatsApp Group Message Collector for Piedras site
+    After=network.target
+
+    [Service]
+    Type=simple
+    User=piedrascollector
+    WorkingDirectory=/opt/piedrascollector
+    ExecStart=/usr/bin/node index.js
+    Restart=on-failure
+    RestartSec=10
+    StandardOutput=journal
+    StandardError=journal
+
+    ; Hardening
+    NoNewPrivileges=true
+    PrivateTmp=true
+    ProtectSystem=strict
+    ReadWritePaths=/opt/piedrascollector
 
     [Install]
     WantedBy=multi-user.target
